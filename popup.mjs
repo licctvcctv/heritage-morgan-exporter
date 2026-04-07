@@ -12,6 +12,7 @@ const rootDirInput = document.querySelector("#rootDir");
 const pageSizeInput = document.querySelector("#pageSize");
 const maxPagesInput = document.querySelector("#maxPages");
 const requestDelayMsInput = document.querySelector("#requestDelayMs");
+const startPageInput = document.querySelector("#startPage");
 
 let pollTimer = null;
 
@@ -93,6 +94,7 @@ async function startExport(resume = false) {
     pageSize: toIntOrNull(pageSizeInput.value) || 50,
     maxPages: toIntOrNull(maxPagesInput.value),
     requestDelayMs: toIntOrNull(requestDelayMsInput.value) ?? 150,
+    startPage: toIntOrNull(startPageInput.value) || 1,
     resume,
   };
 

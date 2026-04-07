@@ -207,8 +207,15 @@ async function runExportJob(options) {
     }
   } else {
     await clearProgress();
-    await resetStatus(options);
-    await pushLog("✓ 任务已启动");
+    // 支持手动指定起始页
+    if (options.startPage && options.startPage > 1) {
+      pageIndex = options.startPage;
+      await resetStatus(options, pageIndex);
+      await pushLog(`✓ 任务已启动，从第 ${pageIndex} 页开始`);
+    } else {
+      await resetStatus(options);
+      await pushLog("✓ 任务已启动");
+    }
   }
 
   try {
