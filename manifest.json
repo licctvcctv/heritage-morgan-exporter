@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Heritage Morgan 导出器",
+  "version": "0.3.0",
+  "description": "自动抓取 Heritage 拍卖搜索结果，按 PCGS/NGC → 等级 → 拍品 → 正面/反面 分文件夹下载图片。",
+  "permissions": ["activeTab", "downloads", "scripting", "storage"],
+  "host_permissions": [
+    "https://*.ha.com/*",
+    "https://dyn1.heritagestatic.com/*"
+  ],
+  "background": {
+    "service_worker": "background.mjs",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Heritage Morgan 导出器",
+    "default_popup": "popup.html"
+  }
+}

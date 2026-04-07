@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <title>Heritage Morgan 自动导出</title>
+    <style>
+      :root {
+        --bg: #f5efe3;
+        --panel: rgba(255, 252, 246, 0.92);
+        --ink: #1c1c1c;
+        --muted: #655d50;
+        --line: rgba(28, 28, 28, 0.12);
+        --accent: #0d5b56;
+        --accent-2: #b7833e;
+        --danger: #b83232;
+        --shadow: 0 18px 40px rgba(24, 24, 24, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        width: 380px;
+        min-height: 560px;
+        padding: 18px;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(183, 131, 62, 0.18), transparent 28%),
+          radial-gradient(circle at bottom right, rgba(13, 91, 86, 0.2), transparent 32%),
+          linear-gradient(135deg, #f8f3ea 0%, #efe5d2 100%);
+        font: 13px/1.45 Georgia, "Times New Roman", serif;
+      }
+
+      .shell {
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        padding: 16px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(16px);
+      }
+
+      .eyebrow {
+        margin: 0 0 6px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        font-size: 10px;
+        color: var(--accent-2);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 26px;
+        line-height: 1;
+      }
+
+      .subtitle {
+        margin: 10px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .section {
+        margin-top: 16px;
+        padding-top: 14px;
+        border-top: 1px solid var(--line);
+      }
+
+      .label {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      input,
+      select {
+        width: 100%;
+        border: 1px solid rgba(28, 28, 28, 0.18);
+        border-radius: 12px;
+        padding: 11px 12px;
+        background: rgba(255, 255, 255, 0.8);
+        color: var(--ink);
+        font: 13px/1.3 Georgia, "Times New Roman", serif;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .btn-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      button {
+        border: 0;
+        border-radius: 14px;
+        padding: 12px 14px;
+        color: white;
+        font: 600 13px/1.1 Georgia, "Times New Roman", serif;
+        letter-spacing: 0.04em;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+
+      #run {
+        background: linear-gradient(135deg, var(--accent) 0%, #0f766e 100%);
+      }
+
+      #stop {
+        background: linear-gradient(135deg, var(--danger) 0%, #8b2020 100%);
+        padding: 12px 18px;
+      }
+
+      .meta {
+        margin-top: 10px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: rgba(13, 91, 86, 0.08);
+        color: var(--muted);
+        word-break: break-word;
+        font-size: 11px;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .stat {
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.68);
+      }
+
+      .stat-label {
+        display: block;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        color: var(--muted);
+      }
+
+      .stat-value {
+        display: block;
+        margin-top: 6px;
+        font-size: 20px;
+        line-height: 1;
+      }
+
+      .status-band {
+        margin-top: 10px;
+        padding: 11px 12px;
+        border-left: 4px solid var(--accent-2);
+        border-radius: 12px;
+        background: rgba(183, 131, 62, 0.11);
+        color: #4f4638;
+        font-size: 12px;
+        word-break: break-word;
+      }
+
+      pre {
+        margin: 0;
+        max-height: 190px;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font: 12px/1.45 "SF Mono", Menlo, monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <p class="eyebrow">自动归档导出器</p>
+      <h1>Heritage Morgan</h1>
+      <p class="subtitle">从当前查询自动翻页，抓取详情页图片，按 PCGS/NGC &rarr; 等级 &rarr; 拍品 &rarr; 正面/反面 分文件夹下载。</p>
+
+      <div class="section">
+        <label class="label" for="rootDir">根目录名称</label>
+        <input id="rootDir" value="heritage_morgan">
+
+        <div class="grid" style="margin-top: 10px;">
+          <div>
+            <label class="label" for="pageSize">每页数量</label>
+            <select id="pageSize">
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50" selected>50</option>
+            </select>
+          </div>
+          <div>
+            <label class="label" for="maxPages">最大页数</label>
+            <input id="maxPages" type="number" min="1" placeholder="空=全部">
+          </div>
+        </div>
+
+        <div class="grid" style="margin-top: 10px;">
+          <div>
+            <label class="label" for="requestDelayMs">请求间隔 (ms)</label>
+            <input id="requestDelayMs" type="number" min="0" value="150">
+          </div>
+          <div>
+            <label class="label">运行模式</label>
+            <input value="从第1页开始" disabled>
+          </div>
+        </div>
+
+        <div class="meta" id="activeTabMeta">正在读取当前标签页...</div>
+
+        <div class="btn-row">
+          <button id="run">开始全自动导出</button>
+          <button id="stop" disabled>停止</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="stats">
+          <div class="stat">
+            <span class="stat-label">状态</span>
+            <span class="stat-value" id="phase">空闲</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">已翻页</span>
+            <span class="stat-value" id="pagesFetched">0</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Lot 数</span>
+            <span class="stat-value" id="totalLotsFound">0</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">已下载</span>
+            <span class="stat-value" id="downloaded">0</span>
+          </div>
+        </div>
+
+        <div class="status-band" id="statusBand">等待开始</div>
+      </div>
+
+      <div class="section">
+        <span class="label">运行日志</span>
+        <pre id="logs">暂无日志</pre>
+      </div>
+    </div>
+
+    <script type="module" src="popup.mjs"></script>
+  </body>
+  </html>
