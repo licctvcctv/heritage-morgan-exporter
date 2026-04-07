@@ -5,9 +5,10 @@ import {
 } from "./shared.mjs";
 
 const STATUS_KEY = "heritageMorganExportStatus";
-const MAX_CONCURRENT_DOWNLOADS = 4; // 最大同时下载数
+const PROGRESS_KEY = "heritageMorganProgress"; // 持久化进度（local storage，重启不丢）
+const MAX_CONCURRENT_DOWNLOADS = 6;
 
-// MV3 service worker 保活：任务运行期间每 20 秒读一次 storage 防止超时
+// MV3 service worker 保活
 let keepaliveTimer = null;
 function startKeepalive() {
   if (keepaliveTimer) return;
@@ -64,19 +65,19 @@ async function pushLog(message) {
   await persistStatus();
 }
 
-async function resetStatus(options) {
+async function resetStatus(options, resumePage = 0, resumeStats = null) {
   jobState = {
     running: true,
     stopped: false,
     phase: "启动中",
     logs: [],
-    pagesFetched: 0,
-    totalLotsFound: 0,
-    processedLots: 0,
-    downloaded: 0,
-    skipped: 0,
-    errors: 0,
-    currentPage: 0,
+    pagesFetched: resumeStats?.pagesFetched || 0,
+    totalLotsFound: resumeStats?.totalLotsFound || 0,
+    processedLots: resumeStats?.processedLots || 0,
+    downloaded: resumeStats?.downloaded || 0,
+    skipped: resumeStats?.skipped || 0,
+    errors: resumeStats?.errors || 0,
+    currentPage: resumePage,
     currentLot: "",
     lastError: "",
     options,
@@ -91,6 +92,34 @@ async function getStatus() {
   return stored[STATUS_KEY] || jobState;
 }
 
+// ── 进度持久化（chrome.storage.local，重启不丢） ──
+async function saveProgress(pageIndex, seenLotUrls, stats) {
+  await chrome.storage.local.set({
+    [PROGRESS_KEY]: {
+      pageIndex,
+      seenLotUrls: [...seenLotUrls],
+      stats: {
+        pagesFetched: stats.pagesFetched,
+        totalLotsFound: stats.totalLotsFound,
+        processedLots: stats.processedLots,
+        downloaded: stats.downloaded,
+        skipped: stats.skipped,
+        errors: stats.errors,
+      },
+      savedAt: nowIso(),
+    },
+  });
+}
+
+async function loadProgress() {
+  const stored = await chrome.storage.local.get(PROGRESS_KEY);
+  return stored[PROGRESS_KEY] || null;
+}
+
+async function clearProgress() {
+  await chrome.storage.local.remove(PROGRESS_KEY);
+}
+
 // DataDome 403 自动重试
 async function fetchText(url, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -101,11 +130,11 @@ async function fetchText(url, retries = 3) {
       if (text.includes("captcha-delivery.com") || text.includes("geo.captcha-delivery")) {
         if (attempt < retries) {
           const delay = 5000 * attempt;
-          await pushLog(`⚠ 触发 DataDome 验证，${delay / 1000}s 后重试 (${attempt}/${retries})...`);
+          await pushLog(`⚠ DataDome 验证，${delay / 1000}s 后重试 (${attempt}/${retries})...`);
           await sleep(delay);
           continue;
         }
-        throw new Error("DataDome 拦截，需要手动在浏览器中完成验证后重试");
+        throw new Error("DataDome 拦截，请手动完成验证后重试");
       }
       return text;
     }
@@ -117,10 +146,10 @@ async function fetchText(url, retries = 3) {
         await sleep(delay);
         continue;
       }
-      throw new Error(`HTTP 403 - DataDome 拦截，请在浏览器中刷新搜索页后重试`);
+      throw new Error(`HTTP 403 - DataDome 拦截`);
     }
 
-    throw new Error(`HTTP ${response.status} - ${url}`);
+    throw new Error(`HTTP ${response.status}`);
   }
 }
 
@@ -128,75 +157,69 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// ── 下载流控：等待单个下载完成 ──
-function waitForDownload(downloadId) {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      chrome.downloads.onChanged.removeListener(handler);
-      resolve(); // 超时也不阻塞，继续下一个
-    }, 60000); // 单张最长等 60 秒
-
-    function handler(delta) {
-      if (delta.id !== downloadId) return;
-      if (delta.state?.current === "complete") {
-        clearTimeout(timeout);
-        chrome.downloads.onChanged.removeListener(handler);
-        resolve();
-      } else if (delta.state?.current === "interrupted") {
-        clearTimeout(timeout);
-        chrome.downloads.onChanged.removeListener(handler);
-        reject(new Error(`下载中断: ${delta.error?.current || "unknown"}`));
-      }
-    }
-
-    chrome.downloads.onChanged.addListener(handler);
-  });
-}
-
-// ── 查询当前进行中的下载数 ──
-function getActiveDownloadCount() {
-  return new Promise((resolve) => {
-    chrome.downloads.search({ state: "in_progress" }, (results) => {
-      resolve(results?.length || 0);
-    });
-  });
-}
-
-// ── 等待下载槽位空出 ──
+// ── 下载流控（简化版，不等单个完成，只控并发数） ──
 async function waitForDownloadSlot() {
-  while (true) {
-    const active = await getActiveDownloadCount();
-    if (active < MAX_CONCURRENT_DOWNLOADS) return;
-    await sleep(500); // 每 0.5s 检查一次
+  for (let i = 0; i < 300; i++) { // 最多等 150 秒
+    try {
+      const results = await chrome.downloads.search({ state: "in_progress" });
+      if ((results?.length || 0) < MAX_CONCURRENT_DOWNLOADS) return;
+    } catch {
+      return; // API 异常时放行，不阻塞
+    }
+    await sleep(500);
   }
+  // 超时也放行，不卡死
 }
 
-// ── 带流控的下载：等槽位 → 发起下载 → 等完成 ──
-async function downloadWithThrottle(url, filename) {
+async function downloadFile(url, filename) {
   await waitForDownloadSlot();
-  const downloadId = await chrome.downloads.download({
-    url,
-    filename,
-    conflictAction: "uniquify",
-    saveAs: false,
-  });
-  await waitForDownload(downloadId);
+  try {
+    await chrome.downloads.download({
+      url,
+      filename,
+      conflictAction: "uniquify",
+      saveAs: false,
+    });
+  } catch (err) {
+    throw new Error(`download API: ${err.message || err}`);
+  }
 }
 
 async function runExportJob(options) {
   startKeepalive();
-  await resetStatus(options);
-  await pushLog("✓ 任务已启动");
 
-  const seenLots = new Set();
+  // ── 尝试续传 ──
   let pageIndex = 1;
+  const seenLots = new Set();
+  let resumeStats = null;
+
+  if (options.resume) {
+    const progress = await loadProgress();
+    if (progress && progress.pageIndex > 1) {
+      pageIndex = progress.pageIndex;
+      progress.seenLotUrls?.forEach((u) => seenLots.add(u));
+      resumeStats = progress.stats;
+      await resetStatus(options, pageIndex, resumeStats);
+      await pushLog(`✓ 从第 ${pageIndex} 页续传（已有 ${resumeStats?.downloaded || 0} 张）`);
+    } else {
+      await resetStatus(options);
+      await pushLog("✓ 任务已启动（无可续传进度）");
+    }
+  } else {
+    await clearProgress();
+    await resetStatus(options);
+    await pushLog("✓ 任务已启动");
+  }
 
   try {
     while (true) {
       const currentStatus = await getStatus();
       if (currentStatus.stopped) {
-        await pushLog("⏹ 用户手动停止");
+        // 停止时保存进度
+        await saveProgress(pageIndex, seenLots, jobState);
+        await pushLog(`⏹ 已停止，进度已保存（第 ${pageIndex} 页），下次可续传`);
         await setStatus({ running: false, phase: "已停止" });
+        stopKeepalive();
         return;
       }
 
@@ -223,7 +246,9 @@ async function runExportJob(options) {
         try {
           searchHtml = await fetchText(searchUrl);
         } catch (err2) {
-          await pushLog(`✗ 重试仍然失败，任务终止`);
+          // 保存进度后终止
+          await saveProgress(pageIndex, seenLots, jobState);
+          await pushLog(`✗ 重试失败，进度已保存（第 ${pageIndex} 页）`);
           throw err2;
         }
       }
@@ -251,8 +276,10 @@ async function runExportJob(options) {
       for (const item of freshItems) {
         const s = await getStatus();
         if (s.stopped) {
-          await pushLog("⏹ 用户手动停止");
+          await saveProgress(pageIndex, seenLots, jobState);
+          await pushLog(`⏹ 已停止，进度已保存（第 ${pageIndex} 页）`);
           await setStatus({ running: false, phase: "已停止" });
+          stopKeepalive();
           return;
         }
 
@@ -274,7 +301,7 @@ async function runExportJob(options) {
 
         try {
           for (const task of tasks) {
-            await downloadWithThrottle(task.url, task.filename);
+            await downloadFile(task.url, task.filename);
           }
 
           await setStatus({
@@ -293,21 +320,16 @@ async function runExportJob(options) {
         }
       }
 
+      // 每页结束保存一次进度
       pageIndex += 1;
+      await saveProgress(pageIndex, seenLots, jobState);
 
       if (options.requestDelayMs > 0) {
         await sleep(options.requestDelayMs * 2);
       }
     }
 
-    // 等待所有剩余下载完成
-    await pushLog("⏳ 等待剩余下载完成...");
-    for (let i = 0; i < 120; i++) {
-      const active = await getActiveDownloadCount();
-      if (active === 0) break;
-      await sleep(1000);
-    }
-
+    await clearProgress();
     await setStatus({
       running: false,
       phase: "已完成",
@@ -364,6 +386,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .catch((error) => {
         sendResponse({ ok: false, error: error.message || String(error) });
       });
+    return true;
+  }
+
+  // 查询是否有可续传的进度
+  if (message?.type === "CHECK_RESUME") {
+    loadProgress().then(sendResponse);
+    return true;
+  }
+
+  // 清除续传进度
+  if (message?.type === "CLEAR_PROGRESS") {
+    clearProgress().then(() => sendResponse({ ok: true }));
     return true;
   }
 

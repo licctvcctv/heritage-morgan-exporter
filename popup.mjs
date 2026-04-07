@@ -81,7 +81,7 @@ async function refreshActiveTabMeta() {
   }
 }
 
-async function startExport() {
+async function startExport(resume = false) {
   const tab = await getActiveTab();
   if (!tab?.url?.includes("ha.com/c/search/results.zx")) {
     throw new Error("请先切到 Heritage 搜索结果页");
@@ -93,6 +93,7 @@ async function startExport() {
     pageSize: toIntOrNull(pageSizeInput.value) || 50,
     maxPages: toIntOrNull(maxPagesInput.value),
     requestDelayMs: toIntOrNull(requestDelayMsInput.value) ?? 150,
+    resume,
   };
 
   const response = await chrome.runtime.sendMessage({
@@ -114,8 +115,19 @@ async function stopExport() {
 
 runButton.addEventListener("click", async () => {
   try {
-    statusBand.textContent = "正在启动...";
-    await startExport();
+    // 检查是否有可续传进度
+    const progress = await chrome.runtime.sendMessage({ type: "CHECK_RESUME" });
+    let resume = false;
+    if (progress?.pageIndex > 1) {
+      resume = confirm(
+        `发现上次进度：第 ${progress.pageIndex} 页，已下载 ${progress.stats?.downloaded || 0} 张\n\n点"确定"续传，点"取消"从头开始`
+      );
+      if (!resume) {
+        await chrome.runtime.sendMessage({ type: "CLEAR_PROGRESS" });
+      }
+    }
+    statusBand.textContent = resume ? "正在续传..." : "正在启动...";
+    await startExport(resume);
     await refreshStatus();
   } catch (error) {
     statusBand.textContent = `启动失败: ${error.message || String(error)}`;
