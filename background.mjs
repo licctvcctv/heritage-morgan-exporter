@@ -258,12 +258,16 @@ async function runExportJob(options) {
 
         const tasks = buildDownloadTasks(item, options.rootDir);
 
-        if (!item.service || !tasks.length) {
+        if (!item.service || !item.isAllowedGrade || !tasks.length) {
           await setStatus({
             processedLots: jobState.processedLots + 1,
             skipped: jobState.skipped + 1,
           });
-          const reason = !item.service ? "无 PCGS/NGC" : "无图片";
+          const reason = !item.service
+            ? "无 PCGS/NGC"
+            : !item.isAllowedGrade
+              ? `grade 不在白名单 (${item.grade || "unknown"})`
+              : "无图片";
           await pushLog(`  跳过: ${reason} - ${item.title?.slice(0, 50) || item.url}`);
           continue;
         }
@@ -278,7 +282,7 @@ async function runExportJob(options) {
             downloaded: jobState.downloaded + tasks.length,
           });
           await pushLog(
-            `  ✓ ${item.service}/${item.grade || "?"} sale${item.saleNo}_lot${item.lotNo} [${tasks.length}张]`,
+            `  ✓ ${item.service}/${item.gradeBucket || item.grade || "?"} sale${item.saleNo}_lot${item.lotNo} [${tasks.length}张]`,
           );
         } catch (error) {
           await setStatus({

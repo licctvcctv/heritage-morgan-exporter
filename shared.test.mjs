@@ -60,15 +60,15 @@ test("parseDetailHtml extracts service grade sale-lot and image urls", () => {
   ]);
 });
 
-test("buildDownloadTasks creates numbered filenames under service/grade/lot", () => {
+test("buildDownloadTasks uses old-style service/grade/front-back folders", () => {
   const detail = parseDetailHtml(SAMPLE_HTML, SAMPLE_URL, "");
   const tasks = buildDownloadTasks(detail, "heritage_morgan");
 
   assert.deepEqual(
     tasks.map((task) => task.filename),
     [
-      "heritage_morgan/pcgs/MS65_Deep_Mirror_Prooflike/sale388_lot2313/01.jpg",
-      "heritage_morgan/pcgs/MS65_Deep_Mirror_Prooflike/sale388_lot2313/02.jpg",
+      "heritage_morgan/PCGS/MS65/front/front_lot2313_sale388.jpg",
+      "heritage_morgan/PCGS/MS65/back/back_lot2313_sale388.jpg",
     ],
   );
 });
@@ -99,6 +99,8 @@ test("parseSearchResultsHtml extracts full item metadata from search page", () =
   ]);
   assert.equal(page.items[0].service, "PCGS");
   assert.equal(page.items[0].grade, "MS65 Deep Mirror Prooflike");
+  assert.equal(page.items[0].gradeBucket, "MS65");
+  assert.equal(page.items[0].isAllowedGrade, true);
   assert.equal(page.items[0].saleNo, "388");
   assert.equal(page.items[0].lotNo, "2313");
   assert.deepEqual(page.items[0].imageUrls, [
@@ -113,6 +115,7 @@ test("buildDownloadTasks works directly from search-page item with front and bac
       {
         service: "PCGS",
         grade: "MS65 Deep Mirror Prooflike",
+        gradeBucket: "MS65",
         saleNo: "388",
         lotNo: "2313",
         imageUrls: [
@@ -125,11 +128,11 @@ test("buildDownloadTasks works directly from search-page item with front and bac
     [
       {
         url: "https://dyn1.heritagestatic.com/ha?p=1-6-1-8-1618323&w=850&h=600&it=product",
-        filename: "heritage_morgan/pcgs/MS65_Deep_Mirror_Prooflike/sale388_lot2313/01.jpg",
+        filename: "heritage_morgan/PCGS/MS65/front/front_lot2313_sale388.jpg",
       },
       {
         url: "https://dyn1.heritagestatic.com/ha?p=1-6-1-8-1618324&w=850&h=600&it=product",
-        filename: "heritage_morgan/pcgs/MS65_Deep_Mirror_Prooflike/sale388_lot2313/02.jpg",
+        filename: "heritage_morgan/PCGS/MS65/back/back_lot2313_sale388.jpg",
       },
     ],
   );

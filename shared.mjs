@@ -4,6 +4,16 @@ const GRADE_START_RE =
 // 匹配 "PR" "MS" 等单独的等级前缀（数字在下一个 token）
 const GRADE_PREFIX_RE =
   /^(?:PO|FR|AG|VG|VF|EF|XF|AU|MS|PR|PF|SP)$/i;
+const ALLOWED_GRADE_BUCKETS = new Set([
+  ...Array.from({ length: 11 }, (_, i) => `MS${60 + i}`),
+  "AU50",
+  "AU53",
+  "AU58",
+  "XF40",
+  "XF45",
+  "VF30",
+  "VF35",
+]);
 
 export function normalizeText(value) {
   return (value || "")
@@ -79,6 +89,22 @@ export function parseGrade(title, service) {
   }
 
   return null;
+}
+
+export function extractGradeBucket(grade) {
+  const text = normalizeText(grade);
+  if (!text) {
+    return null;
+  }
+  const compact = text.match(/\b(?:MS|AU|XF|VF)\s*(\d{2})\b/i);
+  if (!compact) {
+    return null;
+  }
+  return `${text.slice(compact.index, compact.index + 2).toUpperCase()}${compact[1]}`;
+}
+
+export function isAllowedGradeBucket(gradeBucket) {
+  return ALLOWED_GRADE_BUCKETS.has((gradeBucket || "").toUpperCase());
 }
 
 function matchFirst(html, regex) {
@@ -196,6 +222,8 @@ export function parseSearchResultsHtml(html, sourceUrl) {
       title: text,
       service,
       grade,
+      gradeBucket: extractGradeBucket(grade),
+      isAllowedGrade: isAllowedGradeBucket(extractGradeBucket(grade)),
       saleNo,
       lotNo,
       imageUrls: [],
@@ -276,20 +304,20 @@ export function parseDetailHtml(html, url, fallbackTitle = "") {
 
 // ── 下载任务生成 ──
 export function buildDownloadTasks(detail, rootDir = "heritage_morgan") {
-  const serviceFolder = sanitizePathSegment(
-    (detail.service || "unknown").toLowerCase(),
-    "unknown_service",
+  const serviceFolder = sanitizePathSegment(detail.service || "Unknown", "Unknown");
+  const gradeFolder = sanitizePathSegment(
+    detail.gradeBucket || extractGradeBucket(detail.grade) || "",
+    "Unknown",
   );
-  const gradeFolder = sanitizePathSegment(detail.grade || "", "unknown_grade");
-  const saleLotFolder = sanitizePathSegment(
-    `sale${detail.saleNo || "unknown"}_lot${detail.lotNo || "unknown"}`,
-    "unknown_lot",
-  );
+  const lotPart = sanitizePathSegment(detail.lotNo || "unknown", "unknown");
+  const salePart = sanitizePathSegment(detail.saleNo || "unknown", "unknown");
 
-  return (detail.imageUrls || []).map((url, index) => ({
-    url,
-    filename: `${rootDir}/${serviceFolder}/${gradeFolder}/${saleLotFolder}/${String(
-      index + 1,
-    ).padStart(2, "0")}.jpg`,
-  }));
+  return (detail.imageUrls || []).slice(0, 2).map((url, index) => {
+    const side = index === 0 ? "front" : "back";
+    const filename = `${side}_lot${lotPart}_sale${salePart}.jpg`;
+    return {
+      url,
+      filename: `${rootDir}/${serviceFolder}/${gradeFolder}/${side}/${filename}`,
+    };
+  });
 }
